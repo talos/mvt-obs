@@ -6,6 +6,8 @@
     <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
     <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.35.0/mapbox-gl.js'></script>
     <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.35.0/mapbox-gl.css' rel='stylesheet' />
+    <script src='https://code.jquery.com/jquery-3.2.1.min.js'></script>
+
     <style>
         body { margin:0; padding:0; }
         #map { position:absolute; top:0; bottom:0; width:100%; }
@@ -14,6 +16,15 @@
 <body>
 
 <div id='map'>
+ <div class='map-overlay-inner'>
+        <fieldset>
+            <input placeholder='measure id' class="save-in-hash" id='numer_id' name='numer_id' value='' type='text' />
+            <input placeholder='timespan' class="save-in-hash" id='numer_timespan' name='numer_timespan' value='' type='text' />
+            <input placeholder='user name' class="save-in-hash" id='carto_username' name='carto_username' value='' type='text' />
+            <input placeholder='api key' class="save-in-hash" id='carto_api_key' name='carto_api_key' value='' type='text' />
+            <div id="numer_name"></div>
+        </fieldset>
+    </div>
 </div>
 <script>
 mapboxgl.accessToken = 'pk.eyJ1IjoidGFsb3MiLCJhIjoiY2oxYXV3cjFhMDg2ZDJ3b3Z0aXpnYWE3MCJ9.tOBhGAOQiR_bnu-9_F9whQ';
@@ -24,62 +35,7 @@ var map = new mapboxgl.Map({
     zoom: 1
 });
 
-// Join local JSON data with vector tile geometry
-// USA unemplyoment rate in 2009
-// Source https://data.bls.gov/timeseries/LNS14000000
-var maxValue = 13;
-var data = [
-    {"STATE_ID": "01", "unemployment": 13.17},
-    {"STATE_ID": "02", "unemployment": 9.5},
-    {"STATE_ID": "04", "unemployment": 12.15},
-    {"STATE_ID": "05", "unemployment": 8.99},
-    {"STATE_ID": "06", "unemployment": 11.83},
-    {"STATE_ID": "08", "unemployment": 7.52},
-    {"STATE_ID": "09", "unemployment": 6.44},
-    {"STATE_ID": "10", "unemployment": 5.17},
-    {"STATE_ID": "12", "unemployment": 9.67},
-    {"STATE_ID": "13", "unemployment": 10.64},
-    {"STATE_ID": "15", "unemployment": 12.38},
-    {"STATE_ID": "16", "unemployment": 10.13},
-    {"STATE_ID": "17", "unemployment": 9.58},
-    {"STATE_ID": "18", "unemployment": 10.63},
-    {"STATE_ID": "19", "unemployment": 8.09},
-    {"STATE_ID": "20", "unemployment": 5.93},
-    {"STATE_ID": "21", "unemployment": 9.86},
-    {"STATE_ID": "22", "unemployment": 9.81},
-    {"STATE_ID": "23", "unemployment": 7.82},
-    {"STATE_ID": "24", "unemployment": 8.35},
-    {"STATE_ID": "25", "unemployment": 9.1},
-    {"STATE_ID": "26", "unemployment": 10.69},
-    {"STATE_ID": "27", "unemployment": 11.53},
-    {"STATE_ID": "28", "unemployment": 9.29},
-    {"STATE_ID": "29", "unemployment": 9.94},
-    {"STATE_ID": "30", "unemployment": 9.29},
-    {"STATE_ID": "31", "unemployment": 5.45},
-    {"STATE_ID": "32", "unemployment": 4.21},
-    {"STATE_ID": "33", "unemployment": 4.27},
-    {"STATE_ID": "34", "unemployment": 4.09},
-    {"STATE_ID": "35", "unemployment": 7.83},
-    {"STATE_ID": "36", "unemployment": 8.01},
-    {"STATE_ID": "37", "unemployment": 9.34},
-    {"STATE_ID": "38", "unemployment": 11.23},
-    {"STATE_ID": "39", "unemployment": 7.08},
-    {"STATE_ID": "40", "unemployment": 11.22},
-    {"STATE_ID": "41", "unemployment": 6.2},
-    {"STATE_ID": "42", "unemployment": 9.11},
-    {"STATE_ID": "44", "unemployment": 10.42},
-    {"STATE_ID": "45", "unemployment": 8.89},
-    {"STATE_ID": "46", "unemployment": 11.03},
-    {"STATE_ID": "47", "unemployment": 7.35},
-    {"STATE_ID": "48", "unemployment": 8.92},
-    {"STATE_ID": "49", "unemployment": 7.65},
-    {"STATE_ID": "50", "unemployment": 8.01},
-    {"STATE_ID": "51", "unemployment": 7.62},
-    {"STATE_ID": "53", "unemployment": 7.77},
-    {"STATE_ID": "54", "unemployment": 8.49},
-    {"STATE_ID": "55", "unemployment": 9.42},
-    {"STATE_ID": "56", "unemployment": 7.59}
-];
+var obs_extent = 'ST_MakeEnvelope(-179, 89, 179, -89, 4326)';
 
 // Get the vector geometries to join
 // US Census Data Source
@@ -87,8 +43,26 @@ var data = [
 var mapId = "mapbox.us_census_states_2015";
 var layerName = "states";
 var vtMatchProp = "STATEFP";
-var dataMatchProp = "STATE_ID";
-var dataStyleProp = "unemployment";
+var dataMatchProp = "id";
+var dataStyleProp = "value";
+
+// Read hash from URL
+try {
+  params = JSON.parse(window.location.hash.substr(1));
+  for (var k in params) {
+    var $el = $('#' + k + '.save-in-hash');
+    $el.val(params[k]);
+  }
+} catch(err) {};
+
+// Keep URL up to date with form elements
+$('.save-in-hash').on('change', function () {
+  var data = {};
+  $('.save-in-hash').each(function (i, el) {
+    data[$(el).prop('id')] = $(el).val();
+  });
+  window.location.hash = JSON.stringify(data);
+});
 
 map.on('load', function() {
 
@@ -98,15 +72,7 @@ map.on('load', function() {
         url: "mapbox://" + mapId
     });
 
-    // First value is the default, used where the is no data
-    var stops = [["0", "rgba(0,0,0,0)"]];
-
-    // Calculate color for each state based on the unemployment rate
-    data.forEach(function(row) {
-        var green = ((row[dataStyleProp] / maxValue) * 255);
-        var color = "rgba(" + 0 + ", " + green + ", " + 0 + ", 1)";
-        stops.push([row[dataMatchProp], color]);
-    });
+    var stops = [["0", "rgba(128,128,128,0)"]];
 
     // Add layer from the vector tile source with data-driven style
     map.addLayer({
@@ -115,13 +81,76 @@ map.on('load', function() {
         "source": "states",
         "source-layer": layerName,
         "paint": {
-            "fill-color": {
-                "property": vtMatchProp,
-                "type": "categorical",
-                "stops": stops
-            }
+          "fill-color": "#ffcc00"
         }
     }, 'waterway-label');
+
+    var updateData = function (data) {
+      // First value is the default, used where the is no data
+      var stops = [["0", "rgba(0,0,0,0)"]];
+      // Calculate color for each geom based off dynamic data
+      var maxValue = 0;
+      data.forEach(function(row) {
+        if (row[dataStyleProp] > maxValue) {
+          maxValue = row[dataStyleProp]
+        }
+      });
+      data.forEach(function(row) {
+          var green = ((row[dataStyleProp] / maxValue) * 255);
+          var color = "rgba(" + 0 + ", " + green + ", " + 0 + ", 1)";
+          stops.push([row[dataMatchProp], color]);
+      });
+      map.setPaintProperty('states-join', 'fill-color', {
+        'stops': stops,
+        'type': 'categorical',
+        'property': vtMatchProp
+      });
+    };
+
+    var onMoveEnd = function() {
+      var obs_meta = [{
+        //"numer_id": "us.census.acs.B01003001",
+        "numer_id": $('#numer_id').val(),
+        "numer_timespan": $('#numer_timespan').val(),
+        "geom_id": "us.census.tiger.state"
+        //, "normalization": "predenom"
+      }];
+      // TODO this will let through duplicate IDs right now
+      var ids = map.queryRenderedFeatures({
+        layers:['states-join']
+      }).map(function (f) {
+        return f.properties.GEOID;
+      });
+      $.getJSON('https://' + $('#carto_username').val() + '.cartodb.com/api/v2/sql', {
+        api_key: $('#carto_api_key').val(),
+        q: "SELECT OBS_GetMeta("
+            + obs_extent + ", '" + JSON.stringify(obs_meta) + "') meta"
+      }).done(function (meta) {
+        meta = meta.rows[0]['meta'];
+        $('#numer_name').text(meta[0].numer_name);
+        $.getJSON('https://' + $('#carto_username').val() + '.cartodb.com/api/v2/sql', {
+          api_key: $('#carto_api_key').val(),
+          q: " SELECT id, (data->0->>'value')::Numeric as value " +
+             " FROM OBS_GetData(array['" + ids.join("', '") + "'], " +
+             "                        '" + JSON.stringify(meta).replace(/'/g, "''") + "')"
+        }).done(function (data) {
+          updateData(data.rows);
+        }).fail(function (err) {
+          // TODO data fail
+        });
+      }).fail(function (err) {
+        // TODO metadata fail
+      });
+    };
+
+    map.on('moveend', onMoveEnd);
+    var initialRender = true;
+    map.on('render', function() {
+      if (initialRender === true) {
+        initialRender = false;
+        onMoveEnd();
+      }
+    });
 });
 </script>
 
