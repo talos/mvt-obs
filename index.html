@@ -37,15 +37,6 @@ var map = new mapboxgl.Map({
 
 var obs_extent = 'ST_MakeEnvelope(-179, 89, 179, -89, 4326)';
 
-// Get the vector geometries to join
-// US Census Data Source
-// https://www.census.gov/geo/maps-data/data/cbf/cbf_state.html
-var mapId = "mapbox.us_census_states_2015";
-var layerName = "states";
-var vtMatchProp = "STATEFP";
-var dataMatchProp = "id";
-var dataStyleProp = "value";
-
 // Read hash from URL
 try {
   params = JSON.parse(window.location.hash.substr(1));
@@ -66,24 +57,27 @@ $('.save-in-hash').on('change', function () {
 
 map.on('load', function() {
 
-    // Add source for state polygons hosted on Mapbox
-    map.addSource("states", {
-        type: "vector",
-        url: "mapbox://" + mapId
-    });
-
     var stops = [["0", "rgba(128,128,128,0)"]];
 
     // Add layer from the vector tile source with data-driven style
     map.addLayer({
         "id": "states-join",
         "type": "fill",
-        "source": "states",
-        "source-layer": layerName,
+        "source": {
+            type: "geojson",
+            data: "https://" + $('#carto_username').val()
+              + ".cartodb.com/api/v2/sql?api_key=" + $('#carto_api_key').val()
+              + "&format=geojson&q="
+              + encodeURIComponent("SELECT geom_refs, ST_Simplify(the_geom, 0.05) the_geom "
+              + " FROM OBS_GetBoundariesByGeometry( "
+              + " ST_MakeEnvelope(-179, 89, 179, -89, 4326), "
+              + " 'us.census.tiger.county')")
+        },
+        //"source-layer": 'states',
         "paint": {
           "fill-color": "#ffcc00"
         }
-    }, 'waterway-label');
+    });
 
     var updateData = function (data) {
       // First value is the default, used where the is no data
@@ -91,19 +85,19 @@ map.on('load', function() {
       // Calculate color for each geom based off dynamic data
       var maxValue = 0;
       data.forEach(function(row) {
-        if (row[dataStyleProp] > maxValue) {
-          maxValue = row[dataStyleProp]
+        if (row.value > maxValue) {
+          maxValue = row.value
         }
       });
       data.forEach(function(row) {
-          var green = ((row[dataStyleProp] / maxValue) * 255);
-          var color = "rgba(" + 0 + ", " + green + ", " + 0 + ", 1)";
-          stops.push([row[dataMatchProp], color]);
+          var green = ((row.value / maxValue) * 255);
+          var color = "rgba(" + 0 + ", " + green + ", " + 0 + ", 0.5)";
+          stops.push([row.id, color]);
       });
       map.setPaintProperty('states-join', 'fill-color', {
         'stops': stops,
         'type': 'categorical',
-        'property': vtMatchProp
+        'property': 'geom_refs'
       });
     };
 
@@ -112,14 +106,14 @@ map.on('load', function() {
         //"numer_id": "us.census.acs.B01003001",
         "numer_id": $('#numer_id').val(),
         "numer_timespan": $('#numer_timespan').val(),
-        "geom_id": "us.census.tiger.state"
+        "geom_id": "us.census.tiger.county"
         //, "normalization": "predenom"
       }];
       // TODO this will let through duplicate IDs right now
       var ids = map.queryRenderedFeatures({
         layers:['states-join']
       }).map(function (f) {
-        return f.properties.GEOID;
+        return f.properties.geom_refs;
       });
       $.getJSON('https://' + $('#carto_username').val() + '.cartodb.com/api/v2/sql', {
         api_key: $('#carto_api_key').val(),
@@ -131,7 +125,7 @@ map.on('load', function() {
         $.getJSON('https://' + $('#carto_username').val() + '.cartodb.com/api/v2/sql', {
           api_key: $('#carto_api_key').val(),
           q: " SELECT id, (data->0->>'value')::Numeric as value " +
-             " FROM OBS_GetData(array['" + ids.join("', '") + "'], " +
+             " FROM OBS_GetData(array['" + ids.join("','") + "'], " +
              "                        '" + JSON.stringify(meta).replace(/'/g, "''") + "')"
         }).done(function (data) {
           updateData(data.rows);
